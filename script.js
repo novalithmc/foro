@@ -1,8 +1,8 @@
 // ========================================================================
-// ⚠️ REEMPLAZA ESTA URL CON LA URL DE DESPLIEGUE DE TU GOOGLE APPS SCRIPT ⚠️
+// ⚠️ ESTA ES LA URL DE TU APLICACIÓN WEB DE GOOGLE APPS SCRIPT
+// Se usa para enviar y recibir todos los datos (Hilos y Comentarios)
 // ========================================================================
-const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbw6jV9O7RrCIpo_I6bc1D-HHNAZX-ycLcrvc87RXjVFWKKEQ5kCxf58D2ppOLli6sBJ/exec'; 
-// Ejemplo: 'https://script.google.com/macros/s/AKfyc.../exec'
+const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzWLI4OQPBjnEdf4gyh_IW69_LHlwc6Uz0ToxVM2OaeVdLcARjdSIvmxNUypJ7XjN92/exec'; 
 // ========================================================================
 
 
@@ -19,11 +19,19 @@ document.addEventListener('DOMContentLoaded', () => {
         loadThreads();
     }
     
-    // 3. Lógica para la página de vista de hilo (thread_view.html) - TO DO
-    // Nota: La carga de datos para thread_view.html y el formulario de comentarios
-    // se manejará después de verificar que la creación y listado funcionan.
+    // 3. Lógica para la página de vista de hilo (thread_view.html)
+    const threadContentContainer = document.getElementById('thread-content-container');
+    const newCommentForm = document.getElementById('new-comment-form');
+    if (threadContentContainer) {
+        loadThreadView();
+    }
+    if (newCommentForm) {
+        newCommentForm.addEventListener('submit', handleNewCommentSubmit);
+    }
 });
 
+
+// --- LÓGICA DE CREACIÓN DE HILOS (new_thread.html) ---
 
 /**
  * Función para manejar el envío del formulario de creación de hilos.
@@ -32,7 +40,6 @@ document.addEventListener('DOMContentLoaded', () => {
 async function handleNewThreadSubmit(e) {
     e.preventDefault();
     const form = e.target;
-    const messageDiv = document.getElementById('form-message');
     
     // Simulación de validación
     const title = form.threadTitle.value.trim();
@@ -50,7 +57,7 @@ async function handleNewThreadSubmit(e) {
     submitButton.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Publicando...';
 
     const dataToSend = {
-        type: 'new_thread', // Indica a Apps Script que debe guardar en la hoja HILOS
+        type: 'new_thread', // Clave para que Apps Script guarde en la hoja HILOS
         title: title,
         author: author,
         content: content
@@ -70,7 +77,7 @@ async function handleNewThreadSubmit(e) {
         
         if (result.status === 200) {
             showMessage('¡Hilo publicado con éxito! Redirigiendo...', 'alert-success');
-            // Opcional: Redirigir al usuario al índice o al nuevo hilo
+            // Redirigir al usuario al índice
             setTimeout(() => {
                 window.location.href = 'index.html'; 
             }, 2000);
@@ -88,6 +95,9 @@ async function handleNewThreadSubmit(e) {
     }
 }
 
+
+// --- LÓGICA DE LISTADO DE HILOS (index.html) ---
+
 /**
  * Función para cargar y mostrar todos los hilos en el índice (index.html).
  */
@@ -98,11 +108,9 @@ async function loadThreads() {
     loadingDiv.style.display = 'block';
 
     try {
+        // Solicita a Apps Script todos los hilos
         const url = `${GAS_WEB_APP_URL}?action=get_all_threads`;
-        const response = await fetch(url, {
-            method: 'GET',
-            mode: 'cors'
-        });
+        const response = await fetch(url, { method: 'GET', mode: 'cors' });
         
         const result = await response.json();
         
@@ -121,18 +129,19 @@ async function loadThreads() {
                 const card = document.createElement('div');
                 card.classList.add('thread-card', 'd-flex', 'justify-content-between', 'align-items-center');
                 
-                // Nota: Los comentarios por hilo no se cargan aquí para ahorrar tiempo.
-                // Usaremos un valor temporal '0' para Comentarios.
-
+                // Nota: El conteo de comentarios se hace en la vista de hilo para ahorrar recursos.
                 card.innerHTML = `
                     <div>
                         <h4><a href="thread_view.html?id=${thread.id}" class="neon-text" style="text-decoration: none;">${thread.title}</a></h4>
                         <small class="text-muted">Autor: ${thread.author} | Publicado: ${thread.timestamp}</small>
                     </div>
-                    <span class="badge bg-secondary">0 Comentarios</span>
+                    <span class="badge bg-secondary"><i class="fas fa-comments"></i> Cargando...</span>
                 `;
                 listContainer.appendChild(card);
             });
+            // Opcional: Podríamos hacer otra llamada para contar los comentarios,
+            // pero lo dejaremos simple por ahora.
+
         } else {
             listContainer.innerHTML = `<div class="alert alert-danger">Error al cargar hilos: ${result.message || 'Desconocido'}</div>`;
         }
@@ -145,12 +154,146 @@ async function loadThreads() {
     }
 }
 
+
+// --- LÓGICA DE VISTA DE HILO Y COMENTARIOS (thread_view.html) ---
+
+let currentThreadId = null;
+
+/**
+ * Obtiene el ID del hilo desde la URL y carga los datos.
+ */
+async function loadThreadView() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const threadId = urlParams.get('id');
+
+    if (!threadId) {
+        document.getElementById('thread-title').textContent = 'Error: Hilo no especificado.';
+        return;
+    }
+    
+    currentThreadId = threadId; // Guardar ID para usarlo en el formulario de comentarios
+    
+    // URL para obtener el hilo y sus comentarios
+    const url = `${GAS_WEB_APP_URL}?action=get_thread_data&id=${threadId}`;
+
+    try {
+        const response = await fetch(url, { method: 'GET', mode: 'cors' });
+        const result = await response.json();
+        
+        if (result.status === 200 && result.data) {
+            const thread = result.data;
+            
+            // Llenar el contenido del hilo
+            document.getElementById('thread-title').textContent = thread.title;
+            document.getElementById('thread-meta').textContent = `Autor: ${thread.author} | Publicado: ${thread.timestamp}`;
+            document.getElementById('thread-body').textContent = thread.content;
+            
+            // Cargar comentarios
+            renderComments(thread.comments);
+        } else {
+            document.getElementById('thread-title').textContent = `Error 404: Hilo ${threadId} no encontrado.`;
+            document.getElementById('comments-list').innerHTML = `<p class="alert alert-danger">No se pudo cargar el hilo o el servidor respondió: ${result.message}</p>`;
+        }
+
+    } catch (error) {
+        document.getElementById('thread-title').textContent = 'Error de Conexión';
+        document.getElementById('comments-list').innerHTML = `<p class="alert alert-danger">No se pudo conectar con el servidor del foro.</p>`;
+        console.error('Fetch error:', error);
+    }
+}
+
+/**
+ * Renderiza los comentarios en la lista.
+ */
+function renderComments(comments) {
+    const commentsList = document.getElementById('comments-list');
+    commentsList.innerHTML = '';
+    
+    if (comments.length === 0) {
+        commentsList.innerHTML = '<p class="text-center text-muted">Sé el primero en comentar.</p>';
+        return;
+    }
+    
+    // Mostrar comentarios más recientes primero
+    const sortedComments = comments.reverse();
+
+    sortedComments.forEach(comment => {
+        const card = document.createElement('div');
+        card.classList.add('comment-card');
+        card.innerHTML = `
+            <small class="text-info">${comment.author}</small>
+            <p class="mt-1">${comment.content}</p>
+            <small class="text-muted d-block text-end">${comment.timestamp}</small>
+        `;
+        commentsList.appendChild(card);
+    });
+}
+
+/**
+ * Función para manejar el envío del formulario de comentarios.
+ */
+async function handleNewCommentSubmit(e) {
+    e.preventDefault();
+    const form = e.target;
+    
+    const author = form.commentAuthor.value.trim();
+    const content = form.commentContent.value.trim();
+
+    if (!author || !content) {
+        showMessage('Por favor, ingresa tu nombre y tu comentario.', 'alert-warning', 'comment-message');
+        return;
+    }
+
+    const submitButton = form.querySelector('button[type="submit"]');
+    submitButton.disabled = true;
+    submitButton.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Enviando...';
+
+    const dataToSend = {
+        type: 'new_comment', // Clave para que Apps Script guarde en la hoja COMENTARIOS
+        threadId: currentThreadId,
+        author: author,
+        content: content
+    };
+
+    try {
+        const response = await fetch(GAS_WEB_APP_URL, {
+            method: 'POST',
+            mode: 'cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dataToSend)
+        });
+
+        const result = await response.json();
+        
+        if (result.status === 200) {
+            showMessage('Comentario publicado con éxito.', 'alert-success', 'comment-message');
+            form.commentContent.value = ''; // Limpiar campo
+            
+            // Recargar la vista para mostrar el nuevo comentario
+            loadThreadView(); 
+        } else {
+            showMessage(`Error al comentar: ${result.message}`, 'alert-danger', 'comment-message');
+        }
+
+    } catch (error) {
+        showMessage('Error de conexión al enviar el comentario.', 'alert-danger', 'comment-message');
+        console.error('Fetch error:', error);
+    } finally {
+        submitButton.disabled = false;
+        submitButton.innerHTML = '<i class="fas fa-comment-dots"></i> Publicar Comentario';
+    }
+}
+
+// --- FUNCIONES DE UTILIDAD ---
+
 /**
  * Muestra un mensaje de feedback al usuario.
  */
-function showMessage(message, className) {
-    const messageDiv = document.getElementById('form-message');
-    messageDiv.className = `alert mt-4 ${className}`;
-    messageDiv.textContent = message;
-    messageDiv.style.display = 'block';
+function showMessage(message, className, elementId = 'form-message') {
+    const messageDiv = document.getElementById(elementId);
+    if (messageDiv) {
+        messageDiv.className = `alert mt-4 ${className}`;
+        messageDiv.textContent = message;
+        messageDiv.style.display = 'block';
+    }
 }
